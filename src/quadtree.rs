@@ -1,3 +1,5 @@
+use las::Point;
+
 pub struct Aabb {
     pub x_center: f64,
     pub y_center: f64,
@@ -8,7 +10,7 @@ pub struct Aabb {
 pub struct QuadTree {
     pub capacity: usize,
     pub bounds: Aabb,
-    pub points: Vec<usize>,
+    pub points: Vec<Point>,
     pub children: Option<[Box<QuadTree>; 4]>,
     pub depth: u8,
 }
@@ -20,28 +22,29 @@ impl QuadTree {
             bounds,
             points: vec![],
             children: None,
-            depth
+            depth,
         }
     }
 
-    pub fn insert(&mut self, x: f64, y: f64, index: usize) {
-        if x >= self.bounds.x_center - self.bounds.half_width &&
-            x < self.bounds.x_center + self.bounds.half_width &&
-            y >= self.bounds.y_center - self.bounds.half_height &&
-            y < self.bounds.y_center + self.bounds.half_height {
+    pub fn insert(&mut self, point: &Point) {
+        if point.x >= self.bounds.x_center - self.bounds.half_width
+            && point.x < self.bounds.x_center + self.bounds.half_width
+            && point.y >= self.bounds.y_center - self.bounds.half_height
+            && point.y < self.bounds.y_center + self.bounds.half_height
+        {
             if self.points.len() < self.capacity {
-                self.points.push(index);
+                self.points.push(point.to_owned());
             } else {
                 if let Some(children) = &mut self.children {
                     for child in children {
-                        child.insert(x, y, index);
+                        child.insert(point);
                     }
                 } else {
                     self.split();
 
                     if let Some(children) = &mut self.children {
                         for child in children {
-                            child.insert(x, y, index);
+                            child.insert(point);
                         }
                     }
                 }
@@ -64,7 +67,7 @@ impl QuadTree {
                 half_height,
             },
             depth,
-            self.capacity
+            self.capacity,
         );
 
         let tr = QuadTree::new(
@@ -75,7 +78,7 @@ impl QuadTree {
                 half_height,
             },
             depth,
-            self.capacity
+            self.capacity,
         );
 
         let bl = QuadTree::new(
@@ -86,7 +89,7 @@ impl QuadTree {
                 half_height,
             },
             depth,
-            self.capacity
+            self.capacity,
         );
 
         let br = QuadTree::new(
@@ -97,7 +100,7 @@ impl QuadTree {
                 half_height,
             },
             depth,
-            self.capacity
+            self.capacity,
         );
 
         self.children = Some([Box::new(tl), Box::new(tr), Box::new(bl), Box::new(br)]);
@@ -106,7 +109,7 @@ impl QuadTree {
 
 #[cfg(test)]
 mod tests {
-    use crate::quadtree::{QuadTree, Aabb};
+    use crate::quadtree::{Aabb, QuadTree};
 
     #[test]
     fn create_quad_tree_test() {
@@ -129,12 +132,16 @@ mod tests {
             vec![2.5, 2.5],
         ];
 
-        let mut quad_tree = QuadTree::new(Aabb {
-            x_center: 1.5,
-            y_center: 1.5,
-            half_width: 1.5,
-            half_height: 1.5
-        }, 1, 4);
+        let mut quad_tree = QuadTree::new(
+            Aabb {
+                x_center: 1.5,
+                y_center: 1.5,
+                half_width: 1.5,
+                half_height: 1.5,
+            },
+            1,
+            4,
+        );
 
         for (index, point) in points.iter().enumerate() {
             quad_tree.insert(point[0], point[1], index);
