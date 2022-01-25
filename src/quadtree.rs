@@ -1,9 +1,20 @@
-use las::Point;
+#[derive(Clone, Debug)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub r: u16,
+    pub g: u16,
+    pub b: u16,
+}
 
+#[derive(Clone, Debug)]
 pub struct Aabb {
     pub x_center: f64,
     pub y_center: f64,
+    pub z_center: f64,
     pub half_width: f64,
+    pub half_length: f64,
     pub half_height: f64,
 }
 
@@ -29,8 +40,8 @@ impl QuadTree {
     pub fn insert(&mut self, point: &Point) {
         if point.x >= self.bounds.x_center - self.bounds.half_width
             && point.x < self.bounds.x_center + self.bounds.half_width
-            && point.y >= self.bounds.y_center - self.bounds.half_height
-            && point.y < self.bounds.y_center + self.bounds.half_height
+            && point.y >= self.bounds.y_center - self.bounds.half_length
+            && point.y < self.bounds.y_center + self.bounds.half_length
         {
             if self.points.len() < self.capacity {
                 self.points.push(point.to_owned());
@@ -55,16 +66,18 @@ impl QuadTree {
     fn split(&mut self) {
         let half_width = self.bounds.half_width / 2.0;
 
-        let half_height = self.bounds.half_height / 2.0;
+        let half_length = self.bounds.half_length / 2.0;
 
         let depth = self.depth + 1;
 
         let tl = QuadTree::new(
             Aabb {
                 x_center: self.bounds.x_center - half_width,
-                y_center: self.bounds.y_center + half_height,
+                y_center: self.bounds.y_center + half_length,
+                z_center: self.bounds.z_center,
                 half_width,
-                half_height,
+                half_length,
+                half_height: self.bounds.half_height,
             },
             depth,
             self.capacity,
@@ -73,9 +86,11 @@ impl QuadTree {
         let tr = QuadTree::new(
             Aabb {
                 x_center: self.bounds.x_center + half_width,
-                y_center: self.bounds.y_center + half_height,
+                y_center: self.bounds.y_center + half_length,
+                z_center: self.bounds.z_center,
                 half_width,
-                half_height,
+                half_length,
+                half_height: self.bounds.half_height,
             },
             depth,
             self.capacity,
@@ -84,9 +99,11 @@ impl QuadTree {
         let bl = QuadTree::new(
             Aabb {
                 x_center: self.bounds.x_center - half_width,
-                y_center: self.bounds.y_center - half_height,
+                y_center: self.bounds.y_center - half_length,
+                z_center: self.bounds.z_center,
                 half_width,
-                half_height,
+                half_length,
+                half_height: self.bounds.half_height,
             },
             depth,
             self.capacity,
@@ -95,9 +112,11 @@ impl QuadTree {
         let br = QuadTree::new(
             Aabb {
                 x_center: self.bounds.x_center + half_width,
-                y_center: self.bounds.y_center - half_height,
+                y_center: self.bounds.y_center - half_length,
+                z_center: self.bounds.z_center,
                 half_width,
-                half_height,
+                half_length,
+                half_height: self.bounds.half_height,
             },
             depth,
             self.capacity,
