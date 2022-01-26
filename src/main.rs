@@ -6,19 +6,12 @@ use std::path::Path;
 use crate::quadtree::{QuadTree, Aabb, Point};
 use crate::tiles::create_tile;
 use las::point::Classification;
-use proj::Proj;
 
 const MAX_POINTS_PER_TILE: u64 = 4096;
 
 fn main() {
     let mut reader =
         Reader::from_path(Path::new("C:\\tmp\\BETHEL_MARKET_300FT_ROW_FINAL_200423.las")).expect("Can't read LAS file.");
-
-    let crs_source = "EPSG:6559";
-
-    let crs_target = "EPSG:4979";
-
-    let crs_transformation = Proj::new_known_crs(&crs_source, &crs_target, None).unwrap();
 
     let mut points = vec![];
 
@@ -44,9 +37,7 @@ fn main() {
                 }
             };
 
-            let (lon, lat) = crs_transformation.convert((point.x, point.y)).unwrap();
-
-            let (x, y, z) = geodetic_to_geocentric(lat, lon, point.z);
+            let (x, y, z) = geodetic_to_geocentric(point.y, point.x, point.z);
 
             if x < x_min {
                 x_min = x;

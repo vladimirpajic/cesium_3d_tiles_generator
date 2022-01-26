@@ -9,6 +9,7 @@ const MAGIC: &str = "pnts";
 
 const VERSION: u32 = 1;
 
+#[repr(C)]
 pub struct Header<'a> {
     pub magic: &'a str,
     pub version: u32,
@@ -205,13 +206,15 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
         rgb: AttributePosition { byte_offset: coordinates_serialized.len() as u32 }
     };
 
-    let mut feature_table_header_json = serde_json::to_string(&feature_table_header).unwrap();
+    let feature_table_header_json = serde_json::to_string(&feature_table_header).unwrap();
 
-    if (28 + feature_table_header_json.len()) % 8 > 0 {
-        for _i in 0..(8 - (28 + feature_table_header_json.len()) % 8) {
-            feature_table_header_json.push(0x20 as char);
-        }
-    }
+    let length = if feature_table_header_json.len() % 8 == 0 {
+        feature_table_header_json.len()
+    } else {
+        (feature_table_header_json.len() / 8_usize + 1_usize) * 8
+    };
+
+    let feature_table_header_json = format!("{:width$}", feature_table_header_json, width=length);
 
     let tile_set = TileSet {
         asset: TileSetAsset { version: "1.0".to_string() },
@@ -219,34 +222,35 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
         root: TileSetRoot::new(quadtree)
     };
 
-    let mut feature_table_header_bytes = feature_table_header_json.into_bytes();
-
-    let feature_table_json_byte_length = feature_table_header_bytes.len() as u32;
-
-    let mut feature_table_binary_byte_length = coordinates_serialized.len() as u32 + colors_serialized.len() as u32;
+    let mut feature_table_header_json_bytes = feature_table_header_json.into_bytes();
 
     let mut feature_table_bytes = vec![];
 
-    feature_table_bytes.append(&mut feature_table_header_bytes);
+    feature_table_bytes.append(&mut feature_table_header_json_bytes);
     feature_table_bytes.append(&mut coordinates_serialized);
     feature_table_bytes.append(&mut colors_serialized);
-
-    if (28 + feature_table_bytes.len()) % 8 > 0 {
-        for _i in 0..(8 - (28 + feature_table_bytes.len()) % 8) {
-            feature_table_bytes.push(0x0);
-            feature_table_binary_byte_length += 1;
-        }
-    }
 
     let mut header = Header {
         magic: "pnts",
         version: 1,
         byte_length: 28 as u32 + feature_table_bytes.len() as u32,
-        feature_table_json_byte_length,
-        feature_table_binary_byte_length,
+        feature_table_json_byte_length: feature_table_header_json_bytes.len() as u32,
+        feature_table_binary_byte_length: (coordinates_serialized.len() + colors_serialized.len()) as u32,
         batch_table_json_byte_length: 0,
         batch_table_binary_byte_length: 0
     };
+
+    let mut tile_content_binary_inner = vec![];
+    tile_content_binary_inner.append(&mut header.magic.as_bytes().to_vec());
+    tile_content_binary_inner.append(&mut header.version.to_le_bytes().to_vec());
+    tile_content_binary_inner.append(&mut header.byte_length.to_le_bytes().to_vec());
+    tile_content_binary_inner.append(&mut header.feature_table_json_byte_length.to_le_bytes().to_vec());
+    tile_content_binary_inner.append(&mut header.feature_table_binary_byte_length.to_le_bytes().to_vec());
+    tile_content_binary_inner.append(&mut header.batch_table_json_byte_length.to_le_bytes().to_vec());
+    tile_content_binary_inner.append(&mut header.batch_table_binary_byte_length.to_le_bytes().to_vec());
+    tile_content_binary_inner.append(&mut feature_table_bytes);
+
+    tile_content_binary_inner.resize(tile_content_binary_inner.len() + (8 - tile_content_binary_inner.len() % 8) % 8, 0);
 
     std::fs::create_dir_all(base_dir);
 
@@ -254,14 +258,7 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
     tileset_json_file.write_all(serde_json::to_string(&tile_set).unwrap().into_bytes().as_slice());
 
     let mut pnts_file = std::fs::File::create(base_dir.join("root.pnts")).unwrap();
-    pnts_file.write_all(header.magic.as_bytes());
-    pnts_file.write_all(header.version.to_le_bytes().as_ref());
-    pnts_file.write_all(header.byte_length.to_le_bytes().as_ref());
-    pnts_file.write_all(header.feature_table_json_byte_length.to_le_bytes().as_ref());
-    pnts_file.write_all(header.feature_table_binary_byte_length.to_le_bytes().as_ref());
-    pnts_file.write_all(header.batch_table_json_byte_length.to_le_bytes().as_ref());
-    pnts_file.write_all(header.batch_table_binary_byte_length.to_le_bytes().as_ref());
-    pnts_file.write_all(feature_table_bytes.as_slice());
+    pnts_file.write_all(tile_content_binary_inner.as_slice());
 
     match &quadtree.children {
         Some(children) => {
