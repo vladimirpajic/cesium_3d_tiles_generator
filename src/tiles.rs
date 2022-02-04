@@ -187,7 +187,10 @@ impl TileSetRoot {
 }
 
 pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> TileSet {
-    let geometric_error = (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt();
+    let geometric_error = match quadtree.children {
+        Some(_) => (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt(),
+        None => 0.0
+    };
 
     let tile_set = TileSet {
         asset: TileSetAsset { version: "1.0".to_string() },
@@ -222,7 +225,7 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> TileSet {
     tile_set
 }
 
-fn package_points(quadtree: &&QuadTree) -> Vec<u8> {
+pub fn package_points(quadtree: &&QuadTree) -> Vec<u8> {
     let points_length = quadtree.points.len();
 
     let mut coordinates_serialized: Vec<u8> = Vec::with_capacity(points_length * 12);
