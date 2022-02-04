@@ -1,5 +1,7 @@
 #[derive(Clone, Debug)]
 pub struct Point {
+    pub lod: u8,
+    pub morton: u64,
     pub x: f64,
     pub y: f64,
     pub z: f64,
@@ -37,25 +39,46 @@ impl QuadTree {
         }
     }
 
-    pub fn insert(&mut self, point: &Point) {
+    pub fn insert(&mut self, point: &Point, index: usize, number_of_points: usize) {
         if point.x >= self.bounds.x_center - self.bounds.half_width
             && point.x < self.bounds.x_center + self.bounds.half_width
             && point.y >= self.bounds.y_center - self.bounds.half_length
             && point.y < self.bounds.y_center + self.bounds.half_length
         {
-            if self.points.len() < self.capacity {
-                self.points.push(point.to_owned());
-            } else {
-                if let Some(children) = &mut self.children {
-                    for child in children {
-                        child.insert(point);
-                    }
+            let step = number_of_points / (self.capacity * 2_usize.pow((self.depth - 1) as u32));
+            if number_of_points / (self.capacity * 2_usize.pow((self.depth - 1)  as u32)) > 4 {
+                if (index + 1 - self.depth as usize) % step == 0 {
+                    self.points.push(point.to_owned());
                 } else {
-                    self.split();
-
                     if let Some(children) = &mut self.children {
                         for child in children {
-                            child.insert(point);
+                            child.insert(point, index, number_of_points);
+                        }
+                    } else {
+                        self.split();
+
+                        if let Some(children) = &mut self.children {
+                            for child in children {
+                                child.insert(point, index, number_of_points);
+                            }
+                        }
+                    }
+                }
+            } else {
+                if self.points.len() < self.capacity {
+                    self.points.push(point.to_owned());
+                } else {
+                    if let Some(children) = &mut self.children {
+                        for child in children {
+                            child.insert(point, index, number_of_points);
+                        }
+                    } else {
+                        self.split();
+
+                        if let Some(children) = &mut self.children {
+                            for child in children {
+                                child.insert(point, index, number_of_points);
+                            }
                         }
                     }
                 }

@@ -9,7 +9,7 @@ const MAGIC: &str = "pnts";
 
 const VERSION: u32 = 1;
 
-#[repr(C)]
+#[derive(Debug)]
 pub struct Header<'a> {
     pub magic: &'a str,
     pub version: u32,
@@ -35,23 +35,23 @@ pub struct FeatureTableHeader {
     pub rgb: AttributePosition,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct TileSetAsset {
     pub version: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct TileSetRootContent {
     pub uri: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct TileSetRootBoundingVolume {
     #[serde(rename = "box")]
     pub bbox: [f64; 12]
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TileSetRootChild {
     pub content: TileSetRootContent,
@@ -60,22 +60,22 @@ pub struct TileSetRootChild {
     pub refine: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TileSetRoot {
     pub content: TileSetRootContent,
     pub bounding_volume: TileSetRootBoundingVolume,
     pub geometric_error: f64,
     pub refine: String,
-    pub children: Option<[TileSetRootChild; 4]>
+    pub children: Option<Vec<TileSetRootChild>>
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TileSet {
-    asset: TileSetAsset,
-    geometric_error: f64,
-    root: TileSetRoot,
+    pub(crate) asset: TileSetAsset,
+    pub(crate) geometric_error: f64,
+    pub(crate) root: TileSetRoot,
 }
 
 impl TileSetRootBoundingVolume {
@@ -126,37 +126,47 @@ impl TileSetRoot {
 
         let children = match &quadtree.children {
             Some(children) => {
-                Some([
+                let child_0 = &children.get(0).unwrap();
+                let child_1 = &children.get(1).unwrap();
+                let child_2 = &children.get(2).unwrap();
+                let child_3 = &children.get(3).unwrap();
+
+                let geometric_error_0 = (child_0.bounds.half_width.powf(2.0_f64) + child_0.bounds.half_length.powf(2.0_f64)).sqrt();
+                let geometric_error_1 = (child_1.bounds.half_width.powf(2.0_f64)+ child_1.bounds.half_length.powf(2.0_f64)).sqrt();
+                let geometric_error_2 = (child_2.bounds.half_width.powf(2.0_f64) + child_2.bounds.half_length.powf(2.0_f64)).sqrt();
+                let geometric_error_3 = (child_3.bounds.half_width.powf(2.0_f64) + child_3.bounds.half_length.powf(2.0_f64)).sqrt();
+
+                Some(vec![
                     TileSetRootChild {
                         content: TileSetRootContent {
-                            uri: "Tiles/0/tileset.json".to_string()
+                            uri: "0/tileset.json".to_string()
                         },
-                        bounding_volume: TileSetRootBoundingVolume::new(&children.get(0).unwrap()),
-                        geometric_error: 1000_f64 / 2_f64.powf(quadtree.depth as f64 + 1_f64),
+                        bounding_volume: TileSetRootBoundingVolume::new(&child_0),
+                        geometric_error: geometric_error_0,
                         refine: "ADD".to_string()
                     },
                     TileSetRootChild {
                         content: TileSetRootContent {
-                            uri: "Tiles/1/tileset.json".to_string()
+                            uri: "1/tileset.json".to_string()
                         },
-                        bounding_volume: TileSetRootBoundingVolume::new(&children.get(1).unwrap()),
-                        geometric_error: 1000_f64 / 2_f64.powf(quadtree.depth as f64 + 1_f64),
+                        bounding_volume: TileSetRootBoundingVolume::new(&child_1),
+                        geometric_error: geometric_error_1,
                         refine: "ADD".to_string()
                     },
                     TileSetRootChild {
                         content: TileSetRootContent {
-                            uri: "Tiles/2/tileset.json".to_string()
+                            uri: "2/tileset.json".to_string()
                         },
-                        bounding_volume: TileSetRootBoundingVolume::new(&children.get(2).unwrap()),
-                        geometric_error: 1000_f64 / 2_f64.powf(quadtree.depth as f64 + 1_f64),
+                        bounding_volume: TileSetRootBoundingVolume::new(&child_2),
+                        geometric_error: geometric_error_2,
                         refine: "ADD".to_string()
                     },
                     TileSetRootChild {
                         content: TileSetRootContent {
-                            uri: "Tiles/3/tileset.json".to_string()
+                            uri: "3/tileset.json".to_string()
                         },
-                        bounding_volume: TileSetRootBoundingVolume::new(&children.get(3).unwrap()),
-                        geometric_error: 1000_f64 / 2_f64.powf(quadtree.depth as f64 + 1_f64),
+                        bounding_volume: TileSetRootBoundingVolume::new(&child_3),
+                        geometric_error: geometric_error_3,
                         refine: "ADD".to_string()
                     }
                 ])
@@ -164,17 +174,55 @@ impl TileSetRoot {
             None => None
         };
 
+        let geometric_error = (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt();
+
         TileSetRoot {
             content,
             bounding_volume: TileSetRootBoundingVolume::new(&quadtree),
-            geometric_error: 1000_f64 / 2_f64.powf(quadtree.depth as f64),
+            geometric_error,
             refine: "ADD".to_string(),
             children
         }
     }
 }
 
-pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
+pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> TileSet {
+    let geometric_error = (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt();
+
+    let tile_set = TileSet {
+        asset: TileSetAsset { version: "1.0".to_string() },
+        geometric_error,
+        root: TileSetRoot::new(quadtree)
+    };
+
+    if quadtree.points.len() == 0 {
+        return tile_set;
+    }
+
+    let tile_content_binary_inner = package_points(&quadtree);
+
+    std::fs::create_dir_all(base_dir);
+
+    let mut tileset_json_file = std::fs::File::create(base_dir.join("tileset.json")).unwrap();
+    tileset_json_file.write_all(serde_json::to_string(&tile_set).unwrap().into_bytes().as_slice());
+
+    let mut pnts_file = std::fs::File::create(base_dir.join("root.pnts")).unwrap();
+    pnts_file.write_all(tile_content_binary_inner.as_slice());
+
+    match &quadtree.children {
+        Some(children) => {
+            create_tile(&*base_dir.join("0"), &children.get(0).unwrap());
+            create_tile(&*base_dir.join("1"), &children.get(1).unwrap());
+            create_tile(&*base_dir.join("2"), &children.get(2).unwrap());
+            create_tile(&*base_dir.join("3"), &children.get(3).unwrap());
+        },
+        None => {}
+    }
+
+    tile_set
+}
+
+fn package_points(quadtree: &&QuadTree) -> Vec<u8> {
     let points_length = quadtree.points.len();
 
     let mut coordinates_serialized: Vec<u8> = Vec::with_capacity(points_length * 12);
@@ -198,9 +246,9 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
     let feature_table_header = FeatureTableHeader {
         points_length: points_length as u32,
         rtc_center: vec![
-           quadtree.bounds.x_center as f32,
-           quadtree.bounds.y_center as f32,
-           quadtree.bounds.z_center as f32,
+            quadtree.bounds.x_center as f32,
+            quadtree.bounds.y_center as f32,
+            quadtree.bounds.z_center as f32,
         ],
         position: AttributePosition { byte_offset: 0 },
         rgb: AttributePosition { byte_offset: coordinates_serialized.len() as u32 }
@@ -208,21 +256,10 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
 
     let feature_table_header_json = serde_json::to_string(&feature_table_header).unwrap();
 
-    let length = if feature_table_header_json.len() % 8 == 0 {
-        feature_table_header_json.len()
-    } else {
-        (feature_table_header_json.len() / 8_usize + 1_usize) * 8
-    };
-
-    let feature_table_header_json = format!("{:width$}", feature_table_header_json, width=length);
-
-    let tile_set = TileSet {
-        asset: TileSetAsset { version: "1.0".to_string() },
-        geometric_error: 1000_f64 / 2_f64.powf(quadtree.depth as f64),
-        root: TileSetRoot::new(quadtree)
-    };
-
     let mut feature_table_header_json_bytes = feature_table_header_json.into_bytes();
+    feature_table_header_json_bytes.resize(feature_table_header_json_bytes.len() + (8 - (28 + feature_table_header_json_bytes.len()) % 8) % 8, 0x20);
+
+    let feature_table_json_byte_length = feature_table_header_json_bytes.len();
 
     let mut feature_table_bytes = vec![];
 
@@ -230,12 +267,14 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
     feature_table_bytes.append(&mut coordinates_serialized);
     feature_table_bytes.append(&mut colors_serialized);
 
+    feature_table_bytes.resize(feature_table_bytes.len() + (8 - (28 + feature_table_bytes.len()) % 8) % 8, 0);
+
     let mut header = Header {
         magic: "pnts",
         version: 1,
         byte_length: 28 as u32 + feature_table_bytes.len() as u32,
-        feature_table_json_byte_length: feature_table_header_json_bytes.len() as u32,
-        feature_table_binary_byte_length: (coordinates_serialized.len() + colors_serialized.len()) as u32,
+        feature_table_json_byte_length: feature_table_json_byte_length as u32,
+        feature_table_binary_byte_length: (feature_table_bytes.len() - feature_table_json_byte_length) as u32,
         batch_table_json_byte_length: 0,
         batch_table_binary_byte_length: 0
     };
@@ -249,31 +288,6 @@ pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> Option<Aabb> {
     tile_content_binary_inner.append(&mut header.batch_table_json_byte_length.to_le_bytes().to_vec());
     tile_content_binary_inner.append(&mut header.batch_table_binary_byte_length.to_le_bytes().to_vec());
     tile_content_binary_inner.append(&mut feature_table_bytes);
-
-    tile_content_binary_inner.resize(tile_content_binary_inner.len() + (8 - tile_content_binary_inner.len() % 8) % 8, 0);
-
-    std::fs::create_dir_all(base_dir);
-
-    let mut tileset_json_file = std::fs::File::create(base_dir.join("tileset.json")).unwrap();
-    tileset_json_file.write_all(serde_json::to_string(&tile_set).unwrap().into_bytes().as_slice());
-
-    let mut pnts_file = std::fs::File::create(base_dir.join("root.pnts")).unwrap();
-    pnts_file.write_all(tile_content_binary_inner.as_slice());
-
-    match &quadtree.children {
-        Some(children) => {
-            create_tile(&*base_dir.join("Tiles").join("0"), &children.get(0).unwrap());
-            create_tile(&*base_dir.join("Tiles").join("1"), &children.get(1).unwrap());
-            create_tile(&*base_dir.join("Tiles").join("2"), &children.get(2).unwrap());
-            create_tile(&*base_dir.join("Tiles").join("3"), &children.get(3).unwrap());
-        },
-        None => {}
-    }
-
-    if quadtree.depth == 1 {
-        Some(quadtree.bounds.clone())
-    } else {
-        None
-    }
+    tile_content_binary_inner
 }
 

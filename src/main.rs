@@ -2,16 +2,80 @@ mod quadtree;
 mod tiles;
 
 use las::{Read, Reader, Color};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use crate::quadtree::{QuadTree, Aabb, Point};
-use crate::tiles::create_tile;
+use crate::tiles::{create_tile, TileSet, TileSetRoot, TileSetAsset, TileSetRootContent, TileSetRootBoundingVolume, TileSetRootChild};
 use las::point::Classification;
+use std::fs;
+use std::io::Write;
+use rayon::prelude::*;
+use morton_encoding::morton_encode;
 
-const MAX_POINTS_PER_TILE: u64 = 4096;
+const CAPACITY: usize = 65536;
+
+const LAS_PATH: &str = "C:\\temp\\01_LAS\\wgs84";
+
+const OUTPUT_DIR: &str = "C:\\Cesium-1.88\\Apps\\tileset1";
 
 fn main() {
+    let las_path = Path::new(LAS_PATH);
+
+    let output_dir = Path::new(OUTPUT_DIR);
+
+    let mut global_tileset = TileSet {
+        asset: TileSetAsset { version: "1.0".to_string() },
+        geometric_error: 5000.0,
+        root: TileSetRoot {
+            content: TileSetRootContent { uri: "".to_string() },
+            bounding_volume: TileSetRootBoundingVolume { bbox: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] },
+            geometric_error: 2000.0,
+            refine: "ADD".to_string(),
+            children: Some(vec![]),
+        }
+    };
+
+    let mut children = vec![];
+
+    if las_path.is_dir() {
+        let files = fs::read_dir(las_path).expect("IO Error");
+
+        let mut las_files = vec![];
+        for file_result in files {
+            if let Ok(file) = file_result {
+                let path = file.path();
+                if path.is_file() && path.extension().unwrap_or_default().eq("las") {
+                    las_files.push(path);
+                }
+            }
+        };
+
+        children = las_files.par_iter().map(|path| -> TileSetRootChild {
+            let file_name = path.file_name().unwrap().to_str().unwrap().strip_suffix(".las").unwrap();
+
+            let child_tileset = create_tileset_for_file(&path, &output_dir.join(file_name));
+
+            TileSetRootChild {
+                content: TileSetRootContent { uri: format!("{}/tileset.json", file_name) },
+                bounding_volume: child_tileset.root.bounding_volume,
+                geometric_error: child_tileset.root.geometric_error,
+                refine: "ADD".to_string()
+            }
+        })
+            .collect::<Vec<TileSetRootChild>>();
+    }
+
+    global_tileset.root.children = Some(children);
+
+    global_tileset.root.bounding_volume.bbox = global_tileset.clone().root.children.unwrap().get(0).unwrap().bounding_volume.clone().bbox;
+
+    let mut tileset_json_file = std::fs::File::create(output_dir.join("tileset.json")).unwrap();
+
+    tileset_json_file.write_all(serde_json::to_string(&global_tileset).unwrap().into_bytes().as_slice());
+}
+
+fn create_tileset_for_file(source_path: &PathBuf, target_path: &PathBuf) -> TileSet {
     let mut reader =
-        Reader::from_path(Path::new("C:\\tmp\\BETHEL_MARKET_300FT_ROW_FINAL_200423.las")).expect("Can't read LAS file.");
+        Reader::from_path(source_path).expect("Can't read LAS file.");
 
     let mut points = vec![];
 
@@ -64,6 +128,8 @@ fn main() {
             }
 
             points.push(Point {
+                lod: 0,
+                morton: 0,
                 x,
                 y,
                 z,
@@ -87,13 +153,28 @@ fn main() {
         half_width,
         half_length,
         half_height,
-    }, 1, 16384);
+    }, 1, CAPACITY as usize);
 
-    for point in points {
-        quadtree.insert(&point);
+    for mut point in &mut points {
+        let x_norm = (u32::MAX as f64 * (point.x - x_min) / (x_max - x_min)).round() as u32;
+        let y_norm = (u32::MAX as f64 * (point.y - y_min) / (y_max - y_min)).round() as u32;
+        point.morton = morton_encode([x_norm, y_norm]);
     }
 
-    create_tile(Path::new("C:\\Cesium-1.88\\Apps\\tileset"), &quadtree);
+    points.par_sort_by(|point1, point2| point1.morton.cmp(&point2.morton));
+
+    let mut points_to_promote = vec![];
+
+    for (index, point) in points.iter().enumerate() {
+        if index % (4 * points.len() / CAPACITY as usize) == 0 {
+            points_to_promote.push(point);
+            continue;
+        }
+
+        quadtree.insert(&point, index, points.len());
+    }
+
+    create_tile(target_path, &quadtree)
 }
 
 fn geodetic_to_geocentric(lat: f64, lon: f64, h: f64) -> (f64, f64, f64) {
