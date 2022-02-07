@@ -13,7 +13,7 @@ use morton_encoding::morton_encode;
 
 const CAPACITY: usize = 100000;
 
-const LAS_PATH: &str = "C:\\temp\\01_LAS\\wgs84";
+const LAS_PATH: &str = "C:\\data\\Campus Novi Sad\\Laser\\wgs84";
 
 const OUTPUT_DIR: &str = "C:\\Cesium-1.88\\Apps\\tileset1";
 
@@ -130,11 +130,11 @@ fn main() {
         global_quadtree.insert(point, index, global_tileset_points.len());
     }
 
-    global_tileset.root.geometric_error = (global_quadtree.bounds.half_width.powf(2.0_f64) + global_quadtree.bounds.half_length.powf(2.0_f64)).sqrt();
+    global_tileset.root.geometric_error = 0.1 * (global_quadtree.bounds.half_width.powf(2.0_f64) + global_quadtree.bounds.half_length.powf(2.0_f64)).sqrt();
 
     global_tileset.root.bounding_volume = TileSetRootBoundingVolume::new(&global_quadtree);
 
-    global_tileset.geometric_error = global_tileset.root.geometric_error * 3.0;
+    global_tileset.geometric_error = global_tileset.root.geometric_error * 5.0;
 
     let root_pnts = package_points(&&global_quadtree);
 

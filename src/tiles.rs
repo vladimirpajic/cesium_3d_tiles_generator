@@ -131,10 +131,10 @@ impl TileSetRoot {
                 let child_2 = &children.get(2).unwrap();
                 let child_3 = &children.get(3).unwrap();
 
-                let geometric_error_0 = (child_0.bounds.half_width.powf(2.0_f64) + child_0.bounds.half_length.powf(2.0_f64)).sqrt();
-                let geometric_error_1 = (child_1.bounds.half_width.powf(2.0_f64)+ child_1.bounds.half_length.powf(2.0_f64)).sqrt();
-                let geometric_error_2 = (child_2.bounds.half_width.powf(2.0_f64) + child_2.bounds.half_length.powf(2.0_f64)).sqrt();
-                let geometric_error_3 = (child_3.bounds.half_width.powf(2.0_f64) + child_3.bounds.half_length.powf(2.0_f64)).sqrt();
+                let geometric_error_0 = 0.1 * (child_0.bounds.half_width.powf(2.0_f64) + child_0.bounds.half_length.powf(2.0_f64)).sqrt();
+                let geometric_error_1 = 0.1 * (child_1.bounds.half_width.powf(2.0_f64)+ child_1.bounds.half_length.powf(2.0_f64)).sqrt();
+                let geometric_error_2 = 0.1 * (child_2.bounds.half_width.powf(2.0_f64) + child_2.bounds.half_length.powf(2.0_f64)).sqrt();
+                let geometric_error_3 = 0.1 * (child_3.bounds.half_width.powf(2.0_f64) + child_3.bounds.half_length.powf(2.0_f64)).sqrt();
 
                 Some(vec![
                     TileSetRootChild {
@@ -174,7 +174,7 @@ impl TileSetRoot {
             None => None
         };
 
-        let geometric_error = (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt();
+        let geometric_error = 0.1 * (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt();
 
         TileSetRoot {
             content,
@@ -188,7 +188,7 @@ impl TileSetRoot {
 
 pub fn create_tile(base_dir: &Path, quadtree: &QuadTree) -> TileSet {
     let geometric_error = match quadtree.children {
-        Some(_) => (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt(),
+        Some(_) => 0.1 * (quadtree.bounds.half_width.powf(2.0_f64) + quadtree.bounds.half_length.powf(2.0_f64)).sqrt(),
         None => 0.0
     };
 
