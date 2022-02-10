@@ -1,5 +1,6 @@
 mod quadtree;
 mod tiles;
+mod spatial_extent;
 
 use las::{Read, Reader, Color};
 use std::path::{Path, PathBuf};
@@ -10,10 +11,11 @@ use std::fs;
 use std::io::Write;
 use rayon::prelude::*;
 use morton_encoding::morton_encode;
+use crate::spatial_extent::SpatialExtent;
 
 const CAPACITY: usize = 100000;
 
-const LAS_PATH: &str = "C:\\data\\Campus Novi Sad\\Laser\\wgs84";
+const LAS_PATH: &str = "C:\\temp\\pge_trans";
 
 const OUTPUT_DIR: &str = "C:\\Cesium-1.88\\Apps\\tileset1";
 
@@ -43,14 +45,16 @@ fn main() {
         for file_result in files {
             if let Ok(file) = file_result {
                 let path = file.path();
-                if path.is_file() && path.extension().unwrap_or_default().eq("las") {
+                if path.is_file() && (path.extension().unwrap_or_default().eq("laz") || path.extension().unwrap_or_default().eq("las")) {
                     las_files.push(path);
                 }
             }
         };
 
+        println!("{:?}", las_files);
+
         children = las_files.par_iter().map(|path| -> (TileSetRootChild, Vec<Point>) {
-            let file_name = path.file_name().unwrap().to_str().unwrap().strip_suffix(".las").unwrap();
+            let file_name = path.file_name().unwrap().to_str().unwrap().strip_suffix(".laz").unwrap();
 
             let (child_tileset, points_to_promote) = create_tileset_for_file(&path, &output_dir.join(file_name));
 
@@ -67,12 +71,7 @@ fn main() {
             .collect::<Vec<(TileSetRootChild,  Vec<Point>)>>();
     }
 
-    let mut x_min = f64::MAX;
-    let mut x_max = f64::MIN;
-    let mut y_min = f64::MAX;
-    let mut y_max = f64::MIN;
-    let mut z_min = f64::MAX;
-    let mut z_max = f64::MIN;
+    let mut bbox = SpatialExtent::default();
 
     let mut global_tileset_points = vec![];
 
@@ -81,46 +80,24 @@ fn main() {
     for child in children {
         global_tileset_root_children.push(child.0);
         for point in child.1 {
-            if point.x < x_min {
-                x_min = point.x;
-            }
-
-            if point.x > x_max {
-                x_max = point.x;
-            }
-
-            if point.y < y_min {
-                y_min = point.y;
-            }
-
-            if point.y > y_max {
-                y_max = point.y;
-            }
-
-            if point.z < z_min {
-                z_min = point.z;
-            }
-
-            if point.z > z_max {
-                z_max = point.z;
-            }
+            bbox.update(&point);
 
             global_tileset_points.push(point);
         }
     }
 
-    let half_width = (x_max - x_min) / 2.0;
+    let half_width = (bbox.x_max - bbox.x_min) / 2.0;
 
-    let half_length = (y_max - y_min) / 2.0;
+    let half_length = (bbox.y_max - bbox.y_min) / 2.0;
 
-    let half_height = (z_max - z_min) / 2.0;
+    let half_height = (bbox.z_max - bbox.z_min) / 2.0;
 
     global_tileset.root.children = Some(global_tileset_root_children);
 
     let mut global_quadtree = QuadTree::new(Aabb {
-        x_center: x_min + half_width,
-        y_center: y_min + half_length,
-        z_center: z_min + half_height,
+        x_center: bbox.x_min + half_width,
+        y_center: bbox.y_min + half_length,
+        z_center: bbox.z_min + half_height,
         half_width,
         half_length,
         half_height,
@@ -149,87 +126,62 @@ fn create_tileset_for_file(source_path: &PathBuf, target_path: &PathBuf) -> (Til
     let mut reader =
         Reader::from_path(source_path).expect("Can't read LAS file.");
 
+    println!("Processing LAS file {:?} with {} points", source_path.file_name().unwrap_or_default(), reader.header().number_of_points());
+
     let mut points = vec![];
 
-    let mut x_min = f64::MAX;
-    let mut x_max = f64::MIN;
-    let mut y_min = f64::MAX;
-    let mut y_max = f64::MIN;
-    let mut z_min = f64::MAX;
-    let mut z_max = f64::MIN;
+    let mut bbox = SpatialExtent::default();
 
     for point in reader.points() {
-        if let Ok(point) = point {
-            let color = if let Some(color) = point.color {
+        if let Ok(las_point) = point {
+            let color = if let Some(color) = las_point.color {
                 color
             } else {
-                match point.classification {
-                    Classification::Ground => Color::new(0x8888, 0x8888, 0x0000),
-                    Classification::LowVegetation => Color::new(0x0000, 0x8888, 0x0000),
-                    Classification::MediumVegetation => Color::new(0x0000, 0xcccc, 0x0000),
-                    Classification::HighVegetation => Color::new(0x0000, 0xffff, 0x0000),
-                    Classification::Building => Color::new(0xffff, 0x0000, 0x0000),
-                    _ => Color::new(0xffff, 0xffff, 0x0000),
-                }
+                Color::new(0xffff, 0xffff, 0x0000)
             };
 
-            let (x, y, z) = geodetic_to_geocentric(point.y, point.x, point.z);
+            let (x, y, z) = geodetic_to_geocentric(las_point.y, las_point.x, las_point.z);
 
-            if x < x_min {
-                x_min = x;
-            }
-
-            if x > x_max {
-                x_max = x;
-            }
-
-            if y < y_min {
-                y_min = y;
-            }
-
-            if y > y_max {
-                y_max = y;
-            }
-
-            if z < z_min {
-                z_min = z;
-            }
-
-            if z > z_max {
-                z_max = z;
-            }
-
-            points.push(Point {
-                lod: 0,
+            let point = Point {
                 morton: 0,
                 x,
                 y,
                 z,
                 r: color.red,
                 g: color.green,
-                b: color.blue
-            });
+                b: color.blue,
+                classification: u8::from(las_point.classification),
+                is_edge_of_flight_line: las_point.is_edge_of_flight_line,
+                is_synthetic: las_point.is_synthetic,
+                is_key_point: las_point.is_key_point,
+                is_withheld: las_point.is_withheld,
+                is_overlap: las_point.is_overlap
+            };
+
+            bbox.update(&point);
+
+            points.push(point);
         }
     }
 
-    let half_width = (x_max - x_min) / 2.0;
+    let half_width = (bbox.x_max - bbox.x_min) / 2.0;
 
-    let half_length = (y_max - y_min) / 2.0;
+    let half_length = (bbox.y_max - bbox.y_min) / 2.0;
 
-    let half_height = (z_max - z_min) / 2.0;
+    let half_height = (bbox.z_max - bbox.z_min) / 2.0;
 
     let mut quadtree = QuadTree::new(Aabb {
-        x_center: x_min + half_width,
-        y_center: y_min + half_length,
-        z_center: z_min + half_height,
+        x_center: bbox.x_min + half_width,
+        y_center: bbox.y_min + half_length,
+        z_center: bbox.z_min + half_height,
         half_width,
         half_length,
         half_height,
     }, 1, CAPACITY as usize);
 
     for mut point in &mut points {
-        let x_norm = (u32::MAX as f64 * (point.x - x_min) / (x_max - x_min)).round() as u32;
-        let y_norm = (u32::MAX as f64 * (point.y - y_min) / (y_max - y_min)).round() as u32;
+        let x_norm = (u32::MAX as f64 * (point.x - bbox.x_min) / (bbox.x_max - bbox.x_min)).round() as u32;
+        let y_norm = (u32::MAX as f64 * (point.y - bbox.y_min) / (bbox.y_max - bbox.y_min)).round() as u32;
         point.morton = morton_encode([x_norm, y_norm]);
     }
 

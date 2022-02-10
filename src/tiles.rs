@@ -4,6 +4,7 @@ use crate::quadtree::{QuadTree, Aabb};
 use std::path::{Path, PathBuf};
 use std::borrow::BorrowMut;
 use std::io::Write;
+use std::collections::{HashMap, BTreeMap};
 
 const MAGIC: &str = "pnts";
 
@@ -76,6 +77,15 @@ pub struct TileSet {
     pub(crate) asset: TileSetAsset,
     pub(crate) geometric_error: f64,
     pub(crate) root: TileSetRoot,
+}
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchTableAttribute {
+    pub component_type: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    byte_offset: u32,
 }
 
 impl TileSetRootBoundingVolume {
@@ -232,6 +242,18 @@ pub fn package_points(quadtree: &&QuadTree) -> Vec<u8> {
 
     let mut colors_serialized: Vec<u8> = Vec::with_capacity(points_length);
 
+    let mut classification_serialized = Vec::with_capacity(points_length);
+
+    let mut is_edge_of_flight_line_serialized = Vec::with_capacity(points_length);
+
+    let mut is_synthetic_serialized = Vec::with_capacity(points_length);
+
+    let mut is_key_point_serialized = Vec::with_capacity(points_length);
+
+    let mut is_withheld_serialized = Vec::with_capacity(points_length);
+
+    let mut is_overlap_serialized = Vec::with_capacity(points_length);
+
     for point in &quadtree.points {
         let x_relative = (point.x - quadtree.bounds.x_center) as f32;
         let y_relative = (point.y - quadtree.bounds.y_center) as f32;
@@ -244,7 +266,21 @@ pub fn package_points(quadtree: &&QuadTree) -> Vec<u8> {
         colors_serialized.push((point.r >> 8) as u8);
         colors_serialized.push((point.g >> 8) as u8);
         colors_serialized.push((point.b >> 8) as u8);
+
+        classification_serialized.push(point.classification);
+
+        is_edge_of_flight_line_serialized.push(point.is_edge_of_flight_line as u8);
+
+        is_key_point_serialized.push(point.is_key_point as u8);
+
+        is_overlap_serialized.push(point.is_overlap as u8);
+
+        is_synthetic_serialized.push(point.is_synthetic as u8);
+
+        is_withheld_serialized.push(point.is_withheld as u8);
     }
+
+    // set up feature table
 
     let feature_table_header = FeatureTableHeader {
         points_length: points_length as u32,
@@ -272,14 +308,87 @@ pub fn package_points(quadtree: &&QuadTree) -> Vec<u8> {
 
     feature_table_bytes.resize(feature_table_bytes.len() + (8 - (28 + feature_table_bytes.len()) % 8) % 8, 0);
 
+    // set up batch table
+
+    let mut batch_table_header = BTreeMap::new();
+
+    let mut byte_offset = 0_u32;
+
+    batch_table_header.insert("Classification", BatchTableAttribute {
+        component_type: "UNSIGNED_BYTE".to_string(),
+        ty: "SCALAR".to_string(),
+        byte_offset
+    });
+
+    byte_offset += classification_serialized.len() as u32;
+
+    batch_table_header.insert("KeyPoint", BatchTableAttribute {
+        component_type: "UNSIGNED_BYTE".to_string(),
+        ty: "SCALAR".to_string(),
+        byte_offset
+    });
+
+    byte_offset += is_key_point_serialized.len() as u32;
+
+    batch_table_header.insert("EdgeOfFlightLine", BatchTableAttribute {
+        component_type: "UNSIGNED_BYTE".to_string(),
+        ty: "SCALAR".to_string(),
+        byte_offset
+    });
+
+    byte_offset += is_edge_of_flight_line_serialized.len() as u32;
+
+    batch_table_header.insert("Overlap", BatchTableAttribute {
+        component_type: "UNSIGNED_BYTE".to_string(),
+        ty: "SCALAR".to_string(),
+        byte_offset
+    });
+
+    byte_offset += is_overlap_serialized.len() as u32;
+
+    batch_table_header.insert("Withheld", BatchTableAttribute {
+        component_type: "UNSIGNED_BYTE".to_string(),
+        ty: "SCALAR".to_string(),
+        byte_offset
+    });
+
+    byte_offset += is_withheld_serialized.len() as u32;
+
+    batch_table_header.insert("Synthetic", BatchTableAttribute {
+        component_type: "UNSIGNED_BYTE".to_string(),
+        ty: "SCALAR".to_string(),
+        byte_offset
+    });
+
+    let batch_table_header_json = serde_json::to_string(&batch_table_header).unwrap();
+
+    let mut batch_table_header_json_bytes = batch_table_header_json.into_bytes();
+    batch_table_header_json_bytes.resize(batch_table_header_json_bytes.len() + (8 - (28 + batch_table_header_json_bytes.len()) % 8) % 8, 0x20);
+
+    let batch_table_json_byte_length = batch_table_header_json_bytes.len();
+
+    let mut batch_table_bytes = vec![];
+
+    batch_table_bytes.append(&mut batch_table_header_json_bytes);
+    batch_table_bytes.append(&mut classification_serialized);
+    batch_table_bytes.append(&mut is_key_point_serialized);
+    batch_table_bytes.append(&mut is_edge_of_flight_line_serialized);
+    batch_table_bytes.append(&mut is_overlap_serialized);
+    batch_table_bytes.append(&mut is_withheld_serialized);
+    batch_table_bytes.append(&mut is_synthetic_serialized);
+
+    batch_table_bytes.resize(batch_table_bytes.len() + (8 - (28 + batch_table_bytes.len()) % 8) % 8, 0);
+
+    // set up tile points
+
     let mut header = Header {
         magic: "pnts",
         version: 1,
-        byte_length: 28 as u32 + feature_table_bytes.len() as u32,
+        byte_length: 28 as u32 + feature_table_bytes.len() as u32 + batch_table_bytes.len() as u32,
         feature_table_json_byte_length: feature_table_json_byte_length as u32,
         feature_table_binary_byte_length: (feature_table_bytes.len() - feature_table_json_byte_length) as u32,
-        batch_table_json_byte_length: 0,
-        batch_table_binary_byte_length: 0
+        batch_table_json_byte_length: batch_table_json_byte_length as u32,
+        batch_table_binary_byte_length: (batch_table_bytes.len() - batch_table_json_byte_length) as u32,
     };
 
     let mut tile_content_binary_inner = vec![];
@@ -291,6 +400,7 @@ pub fn package_points(quadtree: &&QuadTree) -> Vec<u8> {
     tile_content_binary_inner.append(&mut header.batch_table_json_byte_length.to_le_bytes().to_vec());
     tile_content_binary_inner.append(&mut header.batch_table_binary_byte_length.to_le_bytes().to_vec());
     tile_content_binary_inner.append(&mut feature_table_bytes);
+    tile_content_binary_inner.append(&mut batch_table_bytes);
     tile_content_binary_inner
 }
 

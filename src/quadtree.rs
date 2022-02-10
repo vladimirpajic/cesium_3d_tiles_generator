@@ -1,6 +1,5 @@
 #[derive(Clone, Debug)]
 pub struct Point {
-    pub lod: u8,
     pub morton: u64,
     pub x: f64,
     pub y: f64,
@@ -8,6 +7,12 @@ pub struct Point {
     pub r: u16,
     pub g: u16,
     pub b: u16,
+    pub classification: u8,
+    pub is_edge_of_flight_line: bool,
+    pub is_synthetic: bool,
+    pub is_key_point: bool,
+    pub is_withheld: bool,
+    pub is_overlap: bool,
 }
 
 #[derive(Clone, Debug)]
