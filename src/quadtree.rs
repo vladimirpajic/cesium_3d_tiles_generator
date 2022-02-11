@@ -51,7 +51,9 @@ impl QuadTree {
             && point.y < self.bounds.y_center + self.bounds.half_length
         {
             let step = number_of_points / (self.capacity * 2_usize.pow((self.depth - 1) as u32));
-            if number_of_points / (self.capacity * 2_usize.pow((self.depth - 1)  as u32)) > 4 {
+            if number_of_points / (self.capacity * 2_usize.pow((self.depth - 1) as u32)) > 4
+                && step > 0
+            {
                 if (index + 1 - self.depth as usize) % step == 0 {
                     self.points.push(point.to_owned());
                 } else {
@@ -151,61 +153,5 @@ impl QuadTree {
         );
 
         self.children = Some([Box::new(tl), Box::new(tr), Box::new(bl), Box::new(br)]);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::quadtree::{Aabb, QuadTree};
-
-    #[test]
-    fn create_quad_tree_test() {
-        let points: Vec<Vec<f64>> = vec![
-            vec![0.5, 0.5],
-            vec![2.0, 0.5],
-            vec![0.5, 2.0],
-            vec![2.0, 2.5],
-            vec![1.0, 0.5],
-            vec![2.5, 0.5],
-            vec![0.5, 1.0],
-            vec![1.0, 1.0],
-            vec![2.0, 1.0],
-            vec![2.5, 1.0],
-            vec![1.0, 2.0],
-            vec![2.0, 2.0],
-            vec![2.5, 2.0],
-            vec![0.5, 2.5],
-            vec![1.0, 2.5],
-            vec![2.5, 2.5],
-        ];
-
-        let mut quad_tree = QuadTree::new(
-            Aabb {
-                x_center: 1.5,
-                y_center: 1.5,
-                half_width: 1.5,
-                half_height: 1.5,
-            },
-            1,
-            4,
-        );
-
-        for (index, point) in points.iter().enumerate() {
-            quad_tree.insert(point[0], point[1], index);
-        }
-
-        assert_eq!(quad_tree.points.len(), 4);
-
-        assert_eq!(quad_tree.children.is_some(), true);
-
-        let [tl, tr, bl, br] = quad_tree.children.unwrap();
-
-        assert_eq!(tl.points.len(), 3);
-
-        assert_eq!(tr.points.len(), 3);
-
-        assert_eq!(bl.points.len(), 3);
-
-        assert_eq!(br.points.len(), 3);
     }
 }
